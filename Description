@@ -1,4 +1,0 @@
-This repository contains R scripts used to prepare figures for our manuscript, “Single-cell RNA-seq reveals expanded clones of islet antigen reactive CD4+ T cells in peripheral blood of subjects with type I diabetes”, currently submitted for publication. 
-In this manuscript, We hypothesized that disease-associated cells would show evidence of prior antigen exposure, inferred from expanded T cell receptor (TCR) clonotypes, and essential functional properties in their transcriptomes. To test this, islet-reactive CD4+ memory T cells from the blood of T1D and HC individuals were activated with immunodominant islet peptides, and analyzed using single-cell RNA sequencing.  
-This manuscript describes original work and is not under consideration by any other journal. Gene expression data will be deposited in the NCBI Gene Expression Omnibus (GEO) repository prior to publication. 
-
