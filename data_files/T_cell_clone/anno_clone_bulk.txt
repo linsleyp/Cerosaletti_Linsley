@@ -1,0 +1,10 @@
+libID	stim	rep
+lib2268	mAbs	1
+lib2269	Tmr	1
+lib2366	Unstim	1
+lib2367	Unstim	2
+lib2368	Unstim	3
+lib2372	mAbs	2
+lib2373	Tmr	2
+lib2377	mAbs	3
+lib2378	Tmr	3
