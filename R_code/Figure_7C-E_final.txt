@@ -1,0 +1,144 @@
+### from here
+rm(list = ls())
+
+## select subject for subsetting below (T1D2, T1D4 or T1D5)
+
+subject.sub = c("T1D2")
+
+## working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/T1D_single_cell/")
+
+##load packages
+
+library(MAST)
+library(plyr)
+library(ggplot2); library(reshape2)
+library(plyr)
+library(RColorBrewer)
+library(rgl)
+library(pca3d)
+library(Rtsne)
+
+## set defaults
+theme_set(theme_bw(26) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+update_geom_defaults("point", aes(size = 4))
+
+## read data files
+anno.qc <- read.delim("anno_T1D_single_cell_libs.txt", header=T, stringsAsFactors=FALSE)
+row.names(anno.qc) = anno.qc$libID
+
+tcrs.full = read.delim("TCRs_T1D_single_cell.txt", stringsAsFactors=FALSE)
+
+rpkm = readRDS("RPKM_counts_T1D_X_Y_genes_removed.rds")  # 
+rpkm.date = readRDS("RPKM_counts_T1D_X_Y_genes_removed_date_cor.rds") # date corrected
+
+# select counts file. Use the non-batch corrected file for figures.
+
+counts <- rpkm
+counts = as.data.frame(counts)
+
+# load demographics
+demo <- read.delim("P91_demographics.txt", stringsAsFactors=FALSE)
+demo = na.omit(demo)
+colnames(demo)[1] = c("project")
+
+##Make sure anno libs and count libs are in the same order
+#If not, reorder anno libs
+libOrder <- match(colnames(counts),anno.qc$libID)
+anno.qc <- anno.qc[libOrder,]
+
+#Subset anno
+anno.t1d <- anno.qc[anno.qc$series == "T1D",1:9]
+anno.t1d = subset(anno.t1d, !project == "P91-2") # omit from analysis
+counts.t1d <- subset(counts, select = colnames(counts) %in% anno.t1d$libID)
+
+### Subset here when to use all data or only a single donor. For all data, use 
+anno.t1d <- anno.qc[anno.qc$series == "T1D",1:9]
+anno.t1d = subset(anno.t1d, !project == "P91-2")
+anno.t1d2 = subset(anno.t1d, PID == "T1D2")
+anno.t1d4 = subset(anno.t1d, PID == "T1D4")
+anno.t1d5 = subset(anno.t1d, PID == "T1D5")
+anno.t1d.hc <- subset(anno.t1d, Status == "HC")
+anno.t1d.t1d <- subset(anno.t1d, Status == "T1D")
+anno.t1d2.1 = subset(anno.t1d2, visit == 1)
+anno.t1d2.2 = subset(anno.t1d2, visit == 2)
+anno.t1d2.3 = subset(anno.t1d2, visit == 3)
+
+####### subset by TCR expression
+
+tcrs.anno = merge(tcrs.full, anno.qc[,1:9], by = "libID")
+tcrs.anno.t1d <- tcrs.anno[tcrs.anno$series == "T1D",] # all samples
+
+no = ddply(tcrs.anno.t1d,.(V.gene, J.gene,junction), plyr::summarize, sum = length(junction))
+tcrs.anno.t1d$mult <- no$sum[match(tcrs.anno.t1d$junction, no$junction)]
+cut <- 4
+tcrs.exp <- tcrs.anno.t1d[tcrs.anno.t1d$mult >= cut,]
+tcrs.notexp <- tcrs.anno.t1d[tcrs.anno.t1d$mult < cut,]
+no.sub = subset(no, sum>=cut)
+no.not.sub = subset(no, sum<cut)
+
+E = subset(tcrs.anno.t1d, junction %in% no.sub$junction)
+NE = subset(tcrs.anno.t1d, !junction %in% E$junction)
+E.cell = subset(anno.t1d, anno.t1d$libID %in% E$libID) # 61
+NE.cell = subset(anno.t1d, !anno.t1d$libID %in% E$libID) # 466
+
+anno.t1d = merge(anno.t1d, demo, by = "project") # all samples
+
+anno.t1d$mult <- lapply(anno.t1d$libID, function(x) max(tcrs.anno.t1d$mult[tcrs.anno.t1d$libID == x]))
+anno.t1d$mult <- as.numeric(anno.t1d$mult)
+anno.t1d$exp <- ifelse(anno.t1d$mult >= cut & anno.t1d$Status == "T1D", "T1D-E", 
+                       ifelse(anno.t1d$mult < cut & anno.t1d$Status == "T1D", "T1D-NE",
+                              ifelse(anno.t1d$mult < cut & anno.t1d$Status == "HC", "HC",0)))
+##
+anno.t1d$etcr <- ifelse(anno.t1d$libID %in% anno.t1d.hc$libID, "HC",
+					ifelse((anno.t1d$libID %in% anno.t1d.t1d$libID & anno.t1d$libID %in% E.cell$libID), "T1D-E",
+						ifelse((anno.t1d$libID %in% anno.t1d.t1d$libID & anno.t1d$libID %in% NE.cell$libID), "T1D-NE", "other")))
+
+#Consider percentages of cells that have a shared junction  
+ncells <- ddply(anno.t1d, .(PID), plyr::summarize, freq=length(PID)) 
+anno.t1d$freq <- anno.t1d$mult / ncells$freq[match(anno.t1d$PID, ncells$PID)]
+
+## select anno subset for coloring
+
+anno.name = paste("anno", tolower(subject.sub), sep = ".")
+anno.var = get(anno.name)
+anno.sub = subset(anno.t1d, libID %in% anno.var$libID)
+
+var.name = subject.sub
+anno.var = paste("anno.", tolower(var.name), sep = "")
+var = get(anno.var)
+e.var = paste("E-", var.name, sep = "")
+ne.var = paste("NE-", var.name, sep = "")
+
+## select counts
+counts.set = as.data.frame(counts.t1d)
+or = anno.t1d$libID
+counts.set = counts.set[or]
+comData = log2(counts.set+1)
+
+##### run PCA
+pcaAll = prcomp(t(comData), center=TRUE, scale=F) #center to change mean to 0, scale to change SD to 1
+sumPCall = summary(pcaAll)
+scoresAll= pcaAll$x
+scoresAll = as.data.frame(scoresAll)
+
+#my separate out the number of PCs that explain most of the variation
+pc1All = paste("PC1 (", round(100*sumPCall$importance[2, 1], 1),  "%)", sep="")
+pc2All = paste("PC2 (", round(100*sumPCall$importance[2, 2], 1),  "%)", sep="")
+pc3All = paste("PC3 (", round(100*sumPCall$importance[2, 3], 1),  "%)", sep="")
+
+## plot 2D PCA
+				
+pcaAll$TCR = ifelse(row.names(scoresAll) %in% E.cell$libID & row.names(scoresAll) %in% var$libID, paste(var.name, "-E",sep = ""), 
+				ifelse(row.names(scoresAll) %in% NE.cell$libID & row.names(scoresAll) %in% var$libID, paste(var.name, "-NE",sep = ""), "other cells"))
+				
+#pcaAll$TCR = factor(pcaAll$TCR, levels = c(paste(var.name, "-E",sep = ""), paste(var.name, "-E",sep = ""), "other cells"))
+
+#
+rn = c("GATA3", "IFNG") # genes for biplot
+
+dev.off()
+quartz(width=8,height=8,dpi=72)  ### 
+shape = c("sphere")
+pca2d(pcaAll, components = 1:2, group = pcaAll$TCR, shape = shape, radius = 3, legend = "topright", show.centroids = T, show.plane = T, show.ellipses = T, palette = c("#d3d3d350", "#D55E00", "#009E73"),  biplot = F, biplot.vars = rn) 
+

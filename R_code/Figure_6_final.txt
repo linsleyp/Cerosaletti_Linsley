@@ -1,0 +1,154 @@
+### from here
+rm(list = ls())
+
+## select subject for subsetting below (T1D2, T1D4 or T1D5)
+
+subject.sub = c("T1D4")
+
+## working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/T1D_single_cell/")
+
+##load packages
+
+library(MAST)
+library(plyr)
+library(ggplot2); library(reshape2)
+library(plyr)
+library(RColorBrewer)
+library(pca3d)
+
+## set defaults
+theme_set(theme_bw(26) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+update_geom_defaults("point", aes(size = 4))
+
+## read data files
+anno.qc <- read.delim("anno_T1D_single_cell_libs.txt", header=T, stringsAsFactors=FALSE)
+row.names(anno.qc) = anno.qc$libID
+
+tcrs.full = read.delim("TCRs_T1D_single_cell.txt", stringsAsFactors=FALSE)
+
+rpkm = readRDS("RPKM_counts_T1D_X_Y_genes_removed.rds")  # 
+rpkm.date = readRDS("RPKM_counts_T1D_X_Y_genes_removed_date_cor.rds") # date corrected
+
+# select counts file. Use the non-batch corrected file for figures.
+
+counts <- rpkm
+counts = as.data.frame(counts)
+
+## subset anno
+
+anno.t1d <- anno.qc[anno.qc$series == "T1D",1:10] #260
+anno.t1d = subset(anno.qc, series == "T1D" & !project == "P91-2") # 246
+anno.t1d <- anno.t1d[,1:10]
+
+## combine P91-3, P91-6 and P91-15 for subject T1D2
+anno.t1d$project = gsub("P91-6", "P91-3", anno.t1d$project)
+anno.t1d$project = gsub("P91-15", "P91-3", anno.t1d$project)
+
+t1d.hc = subset(anno.t1d, Status == "HC") # 104
+t1d.t1d = subset(anno.t1d, Status == "T1D") # 146
+
+### Count how many times a tcr is found
+tcrs.anno = merge(tcrs.full, anno.qc[,1:9], by = "libID")
+tcrs.anno.t1d <- tcrs.anno[tcrs.anno$series == "T1D",]
+
+cut <- 8
+no = ddply(tcrs.anno.t1d,.(V.gene, J.gene,junction), plyr::summarize, sum = length(junction))
+tcrs.anno.t1d$mult <- no$sum[match(tcrs.anno.t1d$junction, no$junction)]
+
+tcrs.exp <- tcrs.anno.t1d[tcrs.anno.t1d$mult >= cut,]
+tcrs.notexp <- tcrs.anno.t1d[tcrs.anno.t1d$mult < cut,]
+no.sub = subset(no, sum>=cut)
+no.not.sub = subset(no, sum<cut)
+
+E = subset(tcrs.anno, junction %in% no.sub$junction)
+NE = subset(tcrs.anno, !junction %in% E$junction)
+E.cell = subset(anno.t1d, anno.t1d$libID %in% E$libID) # 61
+NE.cell = subset(anno.t1d, !anno.t1d$libID %in% E$libID) # 466
+
+#Assign each single cell a TCR expansion multiplicity based on the 
+#highest number of times one of its CDR3 junction was found in the population
+
+anno.t1d$mult <- lapply(anno.t1d$libID, function(x) max(tcrs.anno.t1d$mult[tcrs.anno.t1d$libID == x]))
+anno.t1d$mult <- as.numeric(anno.t1d$mult)
+anno.t1d$exp <- ifelse(anno.t1d$mult >= cut & anno.t1d$Status == "T1D", "3. T1D-E", 
+                       ifelse(anno.t1d$mult < cut & anno.t1d$Status == "T1D", "2. T1D-NE",
+                              ifelse(anno.t1d$mult < cut & anno.t1d$Status == "HC", "1. HC",0)))
+
+#Consider percentages of cells that have a shared junction  
+ncells <- ddply(anno.t1d, .(PID), plyr::summarize, freq=length(PID)) 
+anno.t1d$freq <- anno.t1d$mult / ncells$freq[match(anno.t1d$PID, ncells$PID)]
+
+## run pca on samples (remember to use wide format data: row = samples, column = genes)
+
+comData = log2(counts+1)
+
+pcaAll = prcomp(t(comData), center=TRUE, scale=F) #center to change mean to 0, scale to change SD to 1
+sumPCall = summary(pcaAll)
+scoresAll= pcaAll$x
+
+#my separate out the number of PCs that explain most of the variation
+pc1All = paste("PC1 (", round(100*sumPCall$importance[2, 1], 1),  "%)", sep="")
+pc2All = paste("PC2 (", round(100*sumPCall$importance[2, 2], 1),  "%)", sep="")
+pc3All = paste("PC3 (", round(100*sumPCall$importance[2, 3], 1),  "%)", sep="")
+
+set = ifelse(row.names(scoresAll) %in% t1d.hc$libID, "HC",
+		 ifelse(row.names(scoresAll) %in% t1d.t1d$libID, "T1D","other"))
+##
+
+Evar = paste("T1D-E",cut,sep = "")
+etcr = ifelse(row.names(scoresAll) %in% E.cell$libID, Evar,
+		 ifelse(row.names(scoresAll) %in% NE.cell$libID & row.names(scoresAll) %in% t1d.t1d$libID, "T1D-NE",
+			ifelse(row.names(scoresAll) %in% NE.cell$libID & row.names(scoresAll) %in% t1d.hc$libID, "HC", "other")))
+		
+### 2D PCA using etcr. Select PC1, PC2 using "components = 1:2, etc"
+
+dev.off()
+quartz(width=8,height=8,dpi=72)  ### 
+pca2d(pcaAll, components = 1:2, group = etcr, shape = "sphere", radius = 2, legend = "topright", show.centroids = T, show.plane = F, show.ellipses = T, palette = c("#009E73","#D55E00","#0072B2"))
+#, biplot = F, biplot.vars = rn
+
+#### 
+
+### 2D PCA using set
+
+dev.off()
+quartz(width=8,height=8,dpi=72)  ### 
+pca2d(pcaAll, components = 2:3, group = set, shape = "sphere", radius = 2, legend = "topright", show.centroids = T, show.plane = F, show.ellipses = T, palette = c("#009E73","#D55E00","#0072B2"))
+#, biplot = F, biplot.vars = rn
+
+## significance testing of groups
+
+## run PCA on log(counts+1) and save output object as as variable, pcaAll. Extract PC scores (pcaAll$x) to dataframe, scoresAll
+
+## assign conditional variables to scores
+group = ifelse(row.names(scoresAll) %in% t1d.hc$libID, "HC",
+		 ifelse(row.names(scoresAll) %in% t1d.t1d$libID, "T1D","other"))
+##
+etcr = ifelse(row.names(scoresAll) %in% E.cell$libID, Evar,
+		 ifelse(row.names(scoresAll) %in% NE.cell$libID & row.names(scoresAll) %in% t1d.t1d$libID, "T1D-NE",
+			ifelse(row.names(scoresAll) %in% NE.cell$libID & row.names(scoresAll) %in% t1d.hc$libID, "HC", "other")))
+			
+## make dataframe of conditional variables and subset of PC scores
+
+df = data.frame(etcr, group, scoresAll[,1:3])
+
+## asign dependent amd predictor (independent) variables
+
+dvar1 = df$PC1
+dvar2 = df$PC2
+dvar3 = df$PC3
+
+pvar = etcr
+
+## runlinear model and extract p-value(s) from summary
+
+tempa = lm(cbind(dvar1, dvar2)~pvar); summary(tempa)
+tempb = lm(cbind(dvar2, dvar3)~pvar); summary(tempb)
+
+tempc = lm(cbind(dvar1, dvar2, dvar3)~pvar); summary(tempc)
+
+
+
+
+

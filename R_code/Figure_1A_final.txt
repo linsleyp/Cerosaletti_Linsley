@@ -1,0 +1,104 @@
+## from here
+rm(list = ls())
+
+# working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/T_cell_clone")
+
+##load packages
+
+library(lattice)
+library(data.table)
+library(plyr)
+library(ggplot2); theme_set(theme_bw(24)); library(reshape2)
+
+## set defaults
+theme_set(theme_bw(26) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+update_geom_defaults("point", aes(size = 6))
+
+################ load data 
+
+anno.bulk <- read.delim("anno_clone_bulk.txt", stringsAsFactors=FALSE, header = T)
+anno.sc <- read.delim("anno_clone_single_cell.txt", stringsAsFactors=FALSE)
+
+counts.sc <- read.delim("counts_T_cell_clone_single_cell.txt", stringsAsFactors=FALSE)
+counts.bulk <- read.delim("counts_T_cell_clone_bulk.txt", stringsAsFactors=FALSE)
+
+#### calculate median gene expression between bulk samples
+median.bulk = as.data.frame(apply(counts.bulk, 1, median))
+row.names(median.bulk) = row.names(counts.bulk)
+colnames(median.bulk)[1] = c("med")
+
+## copy variables
+counts.clone = counts.sc
+anno.sub = anno.sc
+
+#### count fraction of libraries "on" for each gene
+counts.de = counts.clone
+frxnlibson = as.data.frame(rowMeans(counts.de>0))
+row.names(frxnlibson) = row.names(counts.de)
+colnames(frxnlibson)[1] = c("frxn")
+
+### compare with calculated genes on
+cnt.z = function(x) (sum(x >0))
+gt.one = as.data.frame(apply(counts.de, 1, cnt.z))
+frxn.on = gt.one/ncol(counts.de)
+
+#### calculate median counts/gene in single cell libraries
+sc.med = as.data.frame(apply(counts.de, 1, median))
+row.names(sc.med) = row.names(counts.de)
+
+#### merge fraction libraries "on" with median reads for bulk libraries
+frxn.bulk.med = merge(frxnlibson, median.bulk, by = "row.names")
+row.names(frxn.bulk.med) = frxn.bulk.med$Row.names
+frxn.bulk.med = frxn.bulk.med[,-1]
+frxn.on.med = merge(sc.med, frxn.bulk.med, by = "row.names")
+colnames(frxn.on.med) = c("ids","sc_median", "sc_frxn_on","bulk_med")
+
+####### binning bulk cell counts/gene by abundance
+
+f = cut(log2(frxn.bulk.med$med+1), breaks = 100)
+med.frxn <- as.data.frame(tapply(frxn.bulk.med$frxn, f, median))
+#med.frxn = na.omit(med.frxn)
+
+med.bin <- as.data.frame(tapply(frxn.bulk.med$med, f, median))
+#med.bin = na.omit(med.bin)
+
+f = cut(log2(frxn.on.med$bulk_med+1), breaks = 100)
+
+med.bin <- as.data.frame(tapply(frxn.on.med$sc_median, f, median))
+#med.bin = na.omit(med.bin)
+
+### strip out lower value for each bin
+bins = row.names(med.bin)
+strsplit(bins, ",")
+bins.split = t(data.frame(strsplit(bins, ",")))
+bins.split[,1] = gsub("\\(", "", bins.split[,1])
+
+df = data.frame(as.numeric(bins.split[,1]), med.bin, med.frxn)
+colnames(df) = c("bin", "sc_median", "sc_frxn")
+df = na.omit(df)
+df = subset(df, bin>0)
+
+### plot figure
+
+dev.off()
+quartz(width=7,height=7,dpi=72)  
+
+ggplot(df, aes(x = bin, y = log2(sc_median+1))) + geom_point(colour = "blue")
+
+last_plot() + labs(x = "Bulk transcript abundance, \nlog2(RPKM+1)", y = "Single cell transcript abundance, \nlog2(RPKM+1)")
+last_plot() + geom_abline(intercept = 0, slope = 1)
+last_plot() + scale_x_continuous(limits = c(0,13))
+last_plot() + scale_y_continuous(limits = c(0,13))
+
+### plot Figure S2B
+
+dev.off()
+quartz(width=7,height=7,dpi=72)  ### heaatmap too big for RStudio
+
+ggplot(df, aes(x = bin, y = sc_frxn)) + geom_point(colour = "blue")
+
+last_plot() + labs(x = "Bulk transcript abundance, \nlog2(RPKM+1)", y = "Median fraction libraries, \n    gene on")
+last_plot() + geom_vline(xintercept = 1.58, colour = "#0072B2", lwd = 2) #Mortazavi Wold et al (Nat.Med) claim single copy gene gives 1-3 RPKM. Using the mean of these values, 2 RPKM, gives RPKM+1=3, or ~gives log2(RPM+1) of = 1.584963 or ~35% of libraries.
+last_plot() + geom_vline(xintercept = 3.12, colour = "#D55E00", lwd = 2) # frxn 0.5 = bin 31. Corresponds to log2(RPKM+1) = 3.12 or ~8.6 RPKM
+last_plot() + geom_vline(xintercept = 6.86, colour = "#009E73", lwd =2)# frxn 0.9= bin 67. Corresponds to log2(RPKM+1) = 6.86 or ~115

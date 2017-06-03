@@ -1,0 +1,43 @@
+### from here
+rm(list = ls())
+
+## working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/antigen_ID/")
+
+##load packages
+
+library(ggplot2); library(reshape2)
+
+## set defaults
+theme_set(theme_bw(40) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+update_geom_defaults("point", aes(size = 4))
+
+## load data
+pools <- read.csv("pools.csv", stringsAsFactors=FALSE)
+colnames(pools)[1] = c("treatment")
+pools$lower = pools$mean-pools$SD
+pools$upper = pools$mean+pools$SD
+
+singles <- read.csv("singles.csv", stringsAsFactors=FALSE)
+
+## plots
+
+df= singles
+df$treatment = gsub("mAbs", "CD3/CD28", df$treatment)
+df$treatment = gsub("vehicle", "DMSO", df$treatment)
+
+names = rev(as.character(df$treatment))
+
+df$lower = df$mean-df$SD
+df$upper = df$mean+df$SD
+df$treatment = factor(df$treatment, levels = names)
+
+dev.off()
+quartz(height =8, width =11, dpi =72);
+
+ggplot(df, aes(x = treatment, y = mean)) + geom_bar(stat = "identity", fill = "grey", colour = "black")
+last_plot() + geom_errorbar(data=df, mapping=aes(x=treatment, ymin=upper, ymax=lower), width=0.2, size=1, color="black")
+last_plot() + labs(x = "", y = "cpm")
+last_plot() + coord_flip()
+
+#

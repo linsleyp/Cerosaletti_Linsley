@@ -1,0 +1,65 @@
+###### start here
+rm(list = ls())
+
+## working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/flu_CD8")
+
+##load packages
+library(gdata)
+library(reshape2)
+library(reshape)
+library(plyr)
+library(edgeR)
+library(lattice)
+library(data.table)
+library(ggplot2); theme_set(theme_bw(24)); library(reshape2)
+
+## set defaults
+theme_set(theme_bw(26) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+update_geom_defaults("point", aes(size = 6))
+
+## load data 
+
+anno.flu = read.delim("anno_influenza_CD8.txt", stringsAsFactors = F)
+tcrs.flu = read.delim("TCRs_influenza_CD8.txt", stringsAsFactors = F)
+
+# length(unique(tcrs.flu$libID)) # 28
+
+v = substr(tcrs.flu$V.GENE, 1, 4)
+tcrs.v = data.frame(tcrs.flu, v)
+
+tra = subset(tcrs.v, tcrs.v$V.GENE %in% grep("TRA",tcrs.v$V.GENE, value = T)) #15
+trb = subset(tcrs.v, tcrs.v$V.GENE %in% grep("TRB",tcrs.v$V.GENE, value = T)) #19
+trg = subset(tcrs.v, tcrs.v$V.GENE %in% grep("TRG",tcrs.v$V.GENE, value = T)) #0
+trd = subset(tcrs.v, tcrs.v$V.GENE %in% grep("TRD",tcrs.v$V.GENE, value = T)) #4
+
+tcrs.use = subset(tcrs.v, !(tcrs.v$V.GENE %in% grep("TRD",tcrs.v$V.GENE, value = T))) # 
+tcrs.use = subset(tcrs.use, !(tcrs.use$V.GENE %in% grep("TRG",tcrs.use$V.GENE, value = T))) #34
+#length(unique(tcrs.use$libID)) # 26
+
+###
+temp = ddply(tcrs.use, .(JUNCTION), nrow)
+e.sub = subset(temp, V1>1)
+tcrs.e = subset(tcrs.use, JUNCTION %in% e.sub$JUNCTION)
+#length(unique(tcrs.e$libID)) # 22
+
+## libs that pass qc = 45
+## libs with TRAV or TRBV TCR = 34 (34/45 = 76%)
+## libs with expanded TCR = 30 (30/34 = 88%)
+## libs with TRAV = 15 (15/34 = 44%)
+## libs with TRBV = 19 (19/34 = 56%)
+
+cells = c("total", "with TCR", "with expanded TCR")
+No. = c(45, 34, 30)
+df = data.frame(cells, No.)
+## plots
+df$cells <- with(df, factor(cells, levels= (unique(as.character(cells)))))
+
+## plot bar graph
+dev.off()
+quartz(width=11,height=8,dpi=72)  ### 
+
+ggplot(df, aes(x = cells, y = No. )) + geom_bar(stat = "identity", width = 0.8, fill = "blue")
+last_plot() + labs(x = "", y = "No. cells")
+last_plot() + scale_x_discrete(limit=rev(cells))
+last_plot() + coord_flip()

@@ -1,0 +1,151 @@
+### from here
+rm(list = ls())
+
+## working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/T1D_single_cell/")
+
+##load packages
+library(plyr)
+library(RColorBrewer)
+library(ggplot2); theme_set(theme_bw(20)); library(reshape2)
+
+## set defaults
+theme_set(theme_bw(26) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+cbPalette = c("red","gray")
+cbShape = c(15,16, 17)
+cbShape2 = c(15,16, 17)
+update_geom_defaults("point", aes(size = 8))
+update_geom_defaults("line", aes(size = 3))
+
+## read data files
+anno.qc <- read.delim("anno_T1D_single_cell_libs.txt", header=T, stringsAsFactors=FALSE)
+row.names(anno.qc) = anno.qc$libID
+
+tcrs.full = read.delim("TCRs_T1D_single_cell.txt", stringsAsFactors=FALSE)
+
+## subset annotation
+
+## combine P91-3, P91-6 and P91-15
+anno.qc = subset(anno.qc, !project == "P91-2")
+anno.qc$project = gsub("P91-6", "P91-3", anno.qc$project)
+anno.qc$project = gsub("P91-15", "P91-3", anno.qc$project)
+
+anno.t1d = subset(anno.qc, series == "T1D") # 260
+anno.pa = subset(anno.qc, series == "allergy") # 267
+
+t1d.hc = subset(anno.t1d, Status == "HC") # 104
+t1d.t1d = subset(anno.t1d, Status == "T1D") # 146
+
+pa.hc = subset(anno.pa, Status == "HC") # 26
+pa.pa = subset(anno.pa, Status == "PA") # 132
+pa.pi = subset(anno.pa, Status == "PI") # 109
+pa.papi = subset(anno.pa, Status == "PI" | Status == "PA") # 241
+
+##### identify expanded TCRs
+tcrs.full.anno = merge(tcrs.full, anno.qc[,1:7,9], by = "libID")
+tcrs.anno = subset(tcrs.full.anno, series == "T1D")
+
+### iterative E and NE TCRs at different cuts
+
+#DF = data.frame(cut = as.numeric(), ratio.T1D = as.numeric(), ratio.hch = as.numeric()) # for line graph
+DF = data.frame(cut = as.numeric(), frxn.t1d.E2 = as.numeric(), frxn.t1d.E4 = as.numeric(), frxn.t1d.E5 = as.numeric(), frxn.hc.E2 = as.numeric(), frxn.hc.E3 = as.numeric(), frxn.hc.E5 = as.numeric()) # for line graph
+
+ncx = seq(1,8)
+for(i in ncx) {
+cut = c(i)
+no = ddply(tcrs.anno,.(V.gene, J.gene,junction), plyr::summarize, sum = length(junction))
+no.sub = subset(no, sum>=cut)
+no.not.sub = subset(no, sum<cut)
+
+E = subset(tcrs.anno, junction %in% no.sub$junction)
+NE = subset(tcrs.anno, !junction %in% E$junction)
+E.cell = subset(anno.t1d, anno.t1d$libID %in% E$libID) # 61
+NE.cell = subset(anno.t1d, !anno.t1d$libID %in% E$libID) # 466
+
+#temp = as.data.frame.matrix(table(E.$junction, E$project))
+#tempa = temp[rowSums(temp)> 0,]
+
+e.HC = subset(E.cell, Status == "HC")
+e.T1D = subset(E.cell, Status == "T1D")
+e.T1D2 = subset(E.cell, PID == "T1D2")
+e.T1D4 = subset(E.cell, PID == "T1D4")
+e.T1D5 = subset(E.cell, PID == "T1D5")
+e.HC2 = subset(E.cell, PID == "HC2")
+e.HC3 = subset(E.cell, PID == "HC3")
+e.HC5 = subset(E.cell, PID == "HC5")
+
+ne.HC = subset(NE.cell, Status == "HC")
+ne.T1D = subset(NE.cell, Status == "T1D")
+ne.T1D2 = subset(NE.cell, PID == "T1D2")
+ne.T1D4 = subset(NE.cell, PID == "T1D4")
+ne.T1D5 = subset(NE.cell, PID == "T1D5")
+ne.HC2 = subset(NE.cell, PID == "HC2")
+ne.HC3 = subset(NE.cell, PID == "HC3")
+ne.HC5 = subset(NE.cell, PID == "HC5")
+
+t1d.E = nrow(e.T1D)
+t1d.NE = nrow(ne.T1D)
+hc.E = nrow(e.HC)
+hc.NE = nrow(ne.HC)
+t1d.E2 = nrow(e.T1D2)
+t1d.E4 = nrow(e.T1D4)
+t1d.E5 = nrow(e.T1D5)
+t1d.NE2 = nrow(ne.T1D2)
+t1d.NE4 = nrow(ne.T1D4)
+t1d.NE5 = nrow(ne.T1D5)
+hc.E2 = nrow(e.HC2)
+hc.E3 = nrow(e.HC3)
+hc.E5 = nrow(e.HC5)
+hc.NE2 = nrow(ne.HC2)
+hc.NE3 = nrow(ne.HC3)
+hc.NE5 = nrow(ne.HC5)
+
+frxn.t1d.E2 = t1d.E2/(t1d.E2+t1d.NE2)
+frxn.t1d.E4 = t1d.E4/(t1d.E4+t1d.NE4)
+frxn.t1d.E5 = t1d.E5/(t1d.E5+t1d.NE5)
+
+frxn.hc.E2 = hc.E2/(hc.E2+hc.NE2)
+frxn.hc.E3 = hc.E3/(hc.E3+hc.NE3)
+frxn.hc.E5 = hc.E5/(hc.E5+hc.NE5)
+
+compare <- matrix(c(t1d.E, t1d.NE, hc.E, hc.NE), nrow = 2, dimnames = list(c("t1d-E", "t1d-NE"), c("hc-E", "hc-NE"))); compare
+ft = fisher.test(compare)
+pval = ft$p.val
+
+#result = data.frame(cut, ratio.t1d, ratio.hc) # for line graph
+result = data.frame(cut, frxn.t1d.E2, frxn.t1d.E4, frxn.t1d.E5, frxn.hc.E2, frxn.hc.E3, frxn.hc.E5)
+
+DF[i,] = result
+}
+
+DFa = data.frame(DF[,2:4])
+DFb = data.frame(DF[,5:7])
+
+DFa.mean = apply(DFa, 1, mean)
+DFb.mean = apply(DFb, 1, mean)
+DFa.sd = apply(DFa, 1, sd)
+DFb.sd = apply(DFb, 1, sd)
+
+DF2 = data.frame(cut = DF$cut, t1d.mean = DFa.mean, hc.mean = DFb.mean, t1d.sd = DFa.sd, hc.sd = DFb.sd)
+DF2$t1d.min = DF2$t1d.mean-DF2$t1d.sd
+DF2$t1d.max = DF2$t1d.mean+DF2$t1d.sd
+DF2$hc.min = DF2$hc.mean-DF2$hc.sd
+DF2$hc.max = DF2$hc.mean+DF2$hc.sd
+
+DF2 = DF2[-1,] # remove 0 cut
+
+######### plot line graph
+
+dev.off()
+quartz(width=11,height=8,dpi=72)  ### 
+
+ggplot(DF2, aes(x = cut, y = t1d.mean)) + geom_point(colour = "blue")
+last_plot() + geom_line(data = DF2, aes(x = cut, y = t1d.mean), colour = "blue")
+last_plot() + geom_errorbar(data=DF2, mapping=aes(x=cut, ymin=DF2$t1d.min, ymax=DF2$t1d.max), width=0.2, size=1, color="blue")
+last_plot() + geom_point(data = DF2, aes(x = cut, y = hc.mean), colour = "magenta")
+last_plot() + geom_line(data = DF2, aes(x = cut, y = hc.mean), colour = "magenta")
+last_plot() + geom_errorbar(data=DF2, mapping=aes(x=cut, ymin=DF2$hc.min, ymax=DF2$hc.max), width=0.2, size=1, color="magenta")
+last_plot() + lims(y = c(-0.06,0.6))
+
+last_plot() + labs(x = "No. cells sharing clonotype (> or =)", y = "Fraction cells \nsharing clonotype \n")
+

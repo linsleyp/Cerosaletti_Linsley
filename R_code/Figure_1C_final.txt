@@ -1,0 +1,102 @@
+## from here
+rm(list = ls())
+
+# working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/T_cell_clone")
+
+##load packages
+
+library(lattice)
+library(data.table)
+library(plyr)
+library(ggplot2); theme_set(theme_bw(24)); library(reshape2)
+
+## set defaults
+theme_set(theme_bw(26) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+update_geom_defaults("point", aes(size = 6))
+
+################ load data 
+
+anno.bulk <- read.delim("anno_clone_bulk.txt", stringsAsFactors=FALSE, header = T)
+anno.sc <- read.delim("anno_clone_single_cell.txt", stringsAsFactors=FALSE)
+
+counts.sc <- read.delim("counts_T_cell_clone_single_cell.txt", stringsAsFactors=FALSE)
+counts.b <- read.delim("counts_T_cell_clone_bulk.txt", stringsAsFactors=FALSE)
+counts.rpkm = read.delim("counts_T_cell_clone_single_cell_RPKM.txt", stringsAsFactors = F)
+
+counts = counts.rpkm
+counts = subset(counts, select = colnames(counts) %in% anno.sc$libID)
+
+ensg <- read.delim("unique_ENSG_IDs.txt")
+row.names(ensg) = ensg$ids
+
+## subset anno.sc
+
+anno = anno.sc
+anno.unstim = subset(anno, anno$stim == "Unstimulated")
+anno.mab = subset(anno, anno$stim == "aCD3_aCD28")
+anno.tet = subset(anno, anno$stim == "tetramer")
+
+## add gene names to counts
+
+counts.names = merge(ensg[,1:3], counts, by = "row.names")
+counts.names = counts.names[,-1]
+counts.names = counts.names[,-3]
+
+## filter out ultra low expressed genes
+counts.keep = counts.names
+
+cnt.z = function(x) (sum(x >1))
+gt.one = as.data.frame(apply(counts.keep[,], 1, cnt.z))
+colnames(gt.one)[1] = c("no.")
+keep.genes = subset(gt.one, gt.one$no.>0.1*ncol(counts.keep))
+counts.sub = subset(counts.keep, row.names(counts.keep) %in% row.names(keep.genes))
+counts.sub = na.omit(counts.sub)
+
+row.names(counts.sub) = counts.sub$HGNC_symbol
+
+counts.sub = counts.sub[,-(1:2)]
+
+### subset genes to plot
+
+genes = c("CD2", "CD3E","CD4", "CD28", "CD6", "CCR3", "IFNG", "CCL4", "CCL5")
+
+counts.sub = subset(counts.sub, row.names(counts.sub) %in% genes)
+counts.sub = data.frame(symbol = row.names(counts.sub), counts.sub)
+
+#####  order genes by bulk abundance
+
+## add gene names to bulk counts
+
+counts.bulk = merge(ensg[,1:3], counts.b, by = "row.names")
+counts.bulk = counts.bulk[,-1]
+counts.bulk = counts.bulk[,-3]
+counts.bulk = na.omit(counts.bulk)
+
+counts.bulk = subset(counts.bulk, counts.bulk$HGNC_symbol %in% row.names(counts.sub)) ## for all data
+counts.bulk = counts.bulk[!(duplicated(counts.bulk$HGNC_symbol)),]
+row.names(counts.bulk) = counts.bulk$HGNC_symbol
+counts.bulk = counts.bulk[, -(1:3)]
+
+med.bulk = data.frame(apply(counts.bulk, 1, median))
+med.bulk = data.frame(symbol = row.names(med.bulk), med = med.bulk[,1])
+med.bulk = med.bulk[order(med.bulk$med),]
+med.bulk$med = as.character(med.bulk$med)
+med.bulk$med = as.numeric(med.bulk$med)
+med.bulk$log2 = log2(med.bulk$med+1)
+os = med.bulk$symbol
+
+mc = melt(counts.sub)
+
+mc$set = ifelse(mc$variable %in% anno.unstim$libID, "unstim", ifelse(mc$variable %in% anno.mab$libID, "mAbs", ifelse(mc$variable %in% anno.tet$libID, "tet", "others")))
+
+mc$symbol = factor(mc$symbol, levels = rev(os))
+
+dev.off()
+quartz(width=7,height=5,dpi=72)  ###
+
+cbPalette = c("#009E73","#D55E00","#0072B2")
+ggplot(mc, aes(x = symbol, y =log2(value+1))) + geom_boxplot(aes(fill = set, position = "dodge")) + scale_fill_manual(values = cbPalette)
+last_plot() + labs(x = "", y = "log2(RPKM+1)")
+last_plot() + coord_flip()
+

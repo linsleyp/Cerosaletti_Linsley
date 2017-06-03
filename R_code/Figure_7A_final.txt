@@ -1,0 +1,47 @@
+### from here
+rm(list = ls())
+
+## working directory assumed to be inside a GitHub folder on Mac Desktop
+setwd("~/Desktop/GitHub/data_files/T1D_single_cell/")
+
+##load packages 
+
+library(plyr)
+library(reshape2)
+library(gtools)
+library(ggplot2); theme_set(theme_bw(20)); library(reshape2)
+
+## set defaults
+
+theme_set(theme_bw(32) + theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + theme(legend.key = element_blank()))
+
+to.plot = read.delim("MAST_results_freq_contrast_freq_test.var_freq_ngeneson_model.txt", stringsAsFactors=FALSE)
+colnames(to.plot)[1] = c("symbol")
+
+## make volcano plot
+
+dev.off()
+quartz(width=11,height=8,dpi=72)  ### 
+sig.pval = 0.10
+sig = subset(to.plot, adjP<sig.pval)
+
+genes = c("TIGIT", "IKZF2", "TGFBR3", "IRF4", "TRBV5-1", "CSF2", "IL22", "IL17F")
+genes = c("IFNG", "CD69", "GBP5", "GATA3", "CCR4", "IRF4")
+
+blue = ifelse(!to.plot$symbol %in% sig$symbol, "gray", "blue")
+gray = subset(to.plot, !symbol %in% sig$symbol)
+blue = subset(to.plot, symbol %in% sig$symbol)
+ggplot(gray, aes(x = logFC, y = -log10(adjP))) + geom_point(colour = "gray", alpha = 0.5)
+last_plot() + geom_point(data = blue, aes(x = logFC, y = -log10(adjP)), colour = "blue", alpha = 0.5)
+last_plot() + scale_x_continuous(limits = c(-15,15))
+last_plot() + scale_y_continuous(limits = c(0,10))
+last_plot() + geom_hline(yintercept = -log10(sig.pval), lty = "dashed")
+last_plot() + geom_vline(xintercept = 0, lty = "dashed")
+last_plot() + labs(x = "log(fold-change)" , y = "-log10(FDR)") + theme(text = element_text(size=40))
+
+query = subset(to.plot, to.plot$symbol %in% genes)
+
+X = query$logFC 
+Y = -log10(query$adjP)+0.5
+label = query$symbol
+last_plot() + annotate("text", X, Y, label = label, cex = 8)
